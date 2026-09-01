@@ -1,0 +1,51 @@
+PART 2 — MODELING LOSS
+
+Modeling setup and EDA
+
+I treated the task as current-state severity estimation because predictions.csv contains updated occupancy, updated NOI, and delinquency flags. Those variables would be target leakage if the intended use were prediction at loan origination, so part2.py also fits an origination-only sensitivity model and keeps loan_id and propname out of every feature set. The data contains 39,699 labeled loans across 36,978 properties; 83.93% of severities are exactly zero, 108 exceed the documented upper bound of one, and the maximum is 13.6473. Missingness is material in sqft (12,870 merged loan rows), occ_at_orig (2,027), occ (1,609), proptypelong (1,206), and year_built (70), so imputation and missing indicators are fitted inside each training pipeline.
+
+A random row split is not appropriate because 2,033 properties back multiple loans. I therefore used a fixed 80/20 GroupShuffleSplit by propname, producing 31,790 training loans and 7,909 validation loans with no property overlap; positive-severity shares were 16.16% and 15.72%, respectively. A chronological holdout would be a useful deployment sensitivity test, but the data does not provide the date on which severity was observed, so origination date alone cannot create a fully defensible forward-looking label split.
+
+Features used in the required current-state linear regression
+
+1. log_loan_size: Loan balance measures exposure size, and log1p reduces the influence of very large loans.
+2. ltv_fraction: Higher leverage leaves less collateral cushion if a property must be sold.
+3. occ_at_orig_fraction: Origination occupancy records the property's starting demand and underwriting condition.
+4. signed_log_noi_orig: Origination NOI measures starting debt-service capacity, while the signed log limits scale skew.
+5. loan_term_years: Contractual loan term may change refinancing and maturity risk.
+6. origination_year: Origination vintage can proxy for underwriting and market regimes.
+7. property_age: Property age can capture physical and functional obsolescence.
+8. property_age_invalid: This indicator preserves the information that 848 recorded building years imply a negative age at origination before those ages are set missing and imputed.
+9. log_sqft: Property size can affect liquidity and recovery, and log1p reduces its heavy right skew.
+10. occ_fraction: Current occupancy measures the property's latest operating health under the stated current-state prediction assumption.
+11. occupancy_change: The change from origination measures deterioration or improvement rather than only the current level.
+12. signed_log_noi_current: Current NOI measures latest income support while retaining economically meaningful negative values.
+13. noi_relative_change: Relative NOI change captures operating deterioration using a stable denominator and fixed tail clipping.
+14. is_30d: Thirty-day delinquency is an observed indicator of current credit stress.
+15. is_90d: Ninety-day delinquency identifies more advanced payment distress.
+16. cssaproptype: The normalized broad property type captures sector-specific risk without relying on inconsistent detailed labels.
+17. msa_category: MSA category provides a stable, low-cardinality proxy for market depth and location.
+18. state: State captures additional geographic variation and is encoded with unseen-category protection.
+19. office_group: The Part 1 office-exposure grouping represents the observed difference among office, mixed-office, and non-office loans.
+
+Numeric missing values are median-imputed with missingness indicators and standardized. Categorical values are normalized, most-frequent-imputed, and one-hot encoded with unknown categories ignored; this is important because six detailed property labels occur only in scoring data. All preprocessing is learned from the training partition only. loan_id and propname are retained solely as identifiers, raw dates are replaced with loan term and origination year, and the high-cardinality proptypelong field is excluded from the baseline.
+
+Linear-regression results
+
+On the property-grouped holdout, the required linear regression achieved R² = 0.517950 and MSE = 0.018751 (RMSE = 0.136936 and MAE = 0.066204). The true-versus-predicted scatter plot in outputs/figures/part2_linear_actual_vs_predicted.png shows predictions compressed into bands around the group means rather than following the 45-degree line; predictions range from -0.1839 to 0.6805, and 31.67% are economically invalid negative severities.
+
+Why does ordinary linear regression perform poorly?
+
+Severity combines an 83.93% point mass at zero with a separate continuous positive-loss distribution, which a single linear conditional mean cannot represent. Relationships involving delinquency, leverage, occupancy decline, and NOI decline are nonlinear and interactive, while error variance grows substantially among distressed loans. Squared-error fitting is also sensitive to the long right tail and the 108 target values above one, including one value of 13.6473. Finally, ordinary linear regression is unbounded, which explains the large share of negative predictions and prevents it from respecting the economic shape of the outcome even though it improves materially over the constant baselines.
+
+Recommended alternative
+
+A two-stage hurdle model first estimates the probability that severity is positive and then estimates severity magnitude only for positive-loss loans; multiplying the two outputs gives expected severity. Gradient-boosted trees in both stages capture nonlinearities and interactions, while the Poisson-loss magnitude stage remains nonnegative. On the identical holdout, this model improved R² to 0.585174, MSE to 0.016136, and MAE to 0.048309, with no negative predictions; the occurrence stage achieved ROC-AUC 0.9357, average precision 0.8073, and Brier score 0.0548.
+
+Baseline and sensitivity context
+
+The training-mean baseline produced MSE 0.038900, while an all-zero predictor produced MSE 0.043554; these provide the simplest honest reference points for the required regression. The origination-only linear model achieved R² 0.067295 and MSE 0.036282, compared with R² 0.517950 for the current-state model, demonstrating that updated operating and delinquency variables provide most of the predictive signal and must be governed by a clear as-of-date policy. Capping the target at one as a separately labeled sensitivity run produced linear-regression R² 0.525254 and MSE 0.017874 without resolving the negative-prediction problem.
+
+Scoring output
+
+Because the hurdle model had the lowest validation MSE among the raw-target candidate models, part2.py refits it on all labeled loans and writes outputs/predictions_scored.csv. The output preserves all 1,000 source rows and loan IDs, contains no missing or non-finite predictions, and has a predicted-severity range of 0.0001 to 0.7855. The supplied predictions.csv is not overwritten.

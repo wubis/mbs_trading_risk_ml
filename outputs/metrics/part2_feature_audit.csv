@@ -1,0 +1,21 @@
+column,role,timing,dtype,train_missing,score_missing,train_unique,unseen_score_categories
+loan_id,identifier / excluded,identifier,int64,0,0,39699,0
+propname,identifier / excluded,identifier,object,0,0,36978,0
+orig_date,temporal / derive,known at origination,object,0,0,566,0
+end_date,temporal / derive,known at origination,object,0,0,102,0
+loan_size_mm,numeric,known at origination,float64,0,0,23874,0
+ltv,numeric,known at origination,float64,0,0,3568,0
+occ_at_orig,numeric,known at origination,float64,2027,40,5009,0
+occ,numeric,current state,float64,1609,33,5344,0
+noi_at_orig,numeric,known at origination,float64,0,0,39691,0
+noi,numeric,current state,float64,0,0,39694,0
+is_30d,boolean,current state,bool,0,0,2,0
+is_90d,boolean,current state,bool,0,0,2,0
+severity,target,outcome,float64,0,1000,6369,0
+cssaproptype,categorical,known at origination,object,0,0,12,0
+proptype,categorical,known at origination,object,0,0,96,0
+proptypelong,categorical,known at origination,object,1206,30,496,6
+state,categorical,known at origination,object,0,0,59,0
+msa_category,categorical,known at origination,object,0,0,8,0
+year_built,numeric,known at origination,float64,70,1,199,0
+sqft,numeric,known at origination,float64,12870,322,22622,0

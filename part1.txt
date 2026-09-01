@@ -1,0 +1,21 @@
+PART 1 — ARE OFFICES IN DISTRESS?
+
+Method
+
+I merged all 39,699 loan records to the property data on propname using a validated many-to-one join; every loan matched and the merge preserved the row count. I classified CSSA property type OF as single-purpose office. I classified mixed-use properties as containing office space when their detailed property type included the word "office." Four mixed-use loans had no detailed property type, so I retained them in an unknown audit category and excluded them from the requested three-group comparison.
+
+Results
+
+Figure 1 in part1.ipynb shows that office loans have the highest unweighted average severity at 10.64% (6,916 loans; property-cluster bootstrap 95% CI: 10.08%–11.20%). Mixed-use properties containing offices average 7.95% (922 loans; 95% CI: 6.66%–9.31%), while non-office properties average 6.06% (31,857 loans; 95% CI: 5.84%–6.29%). The notebook generates these values, group counts, confidence intervals, and the supporting sensitivity statistics directly from the two supplied CSV files.
+
+Conclusion
+
+Yes, the unweighted loan-level evidence supports the portfolio manager's hypothesis that offices appear more distressed. The result is driven mainly by loss frequency: 23.71% of office loans have positive severity, versus 18.33% of mixed-use-with-office loans and 14.35% of non-office loans. Conditional on severity being positive, the average severities are much closer—44.88%, 43.38%, and 42.27%, respectively—so office exposure is associated more strongly with whether a loss occurs than with how large a positive loss becomes.
+
+What might explain the finding?
+
+The pattern is consistent with weaker demand for office space reducing occupancy and rental income, which can make debt service and full recovery more difficult. It is not, however, a causal estimate of remote-work effects: office loans may also differ in leverage, delinquency, geography, vintage, property quality, and size. This distinction matters for trading. When severity is weighted by loan balance, the group means are 7.90% for office, 5.61% for mixed-use with office, and 7.07% for non-office, so office remains highest but its lead over non-office is much smaller.
+
+Data caveat
+
+The source description states that severity is between zero and one, but 108 loan records exceed one. The primary results preserve the supplied values rather than silently changing them. As a sensitivity check, capping severity at one produces means of 10.59% for office, 7.95% for mixed-use with office, and 5.99% for non-office, leaving the qualitative conclusion unchanged.
