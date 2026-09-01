@@ -163,10 +163,9 @@ required linear regression and produces nonnegative estimates. The result does n
 support a production claim yet. The largest open issue is whether current operating
 and delinquency fields are valid at the intended prediction date.
 
-For a 24-hour exercise, the project stops at the hurdle model instead of running a
-large hyperparameter search. The next useful work would be repeated grouped
-cross-validation, probability calibration, error review by subgroup, and a business
-decision on severity values above 1.
+The project stops at the hurdle model instead of running a large hyperparameter search. 
+The next useful work would be repeated grouped cross-validation, probability calibration, 
+error review by subgroup, and a business decision on severity values above 1.
 
 ## Repository files
 
