@@ -8,6 +8,8 @@ The labeled data has 39,699 loans across 36,978 properties. Severity is zero for
 
 A random row split could put two loans from the same property on opposite sides of the split. That affects 2,033 properties in this data. I used a fixed 80/20 GroupShuffleSplit on propname instead. It produced 31,790 training loans and 7,909 validation loans with no property overlap. The share of positive-severity loans was 16.16% in training and 15.72% in validation. A time-based test would also be useful for a production model, but there is no date showing when severity was observed. Origination date alone is not enough to build a clean forward-looking test.
 
+I kept that holdout for the required plot and also ran three shuffled repetitions of five-fold GroupKFold. This produced 15 paired validation folds. Each property appeared in one validation fold per repetition, with no property overlap inside any fold. Preprocessing and both models were refitted from scratch for every fold.
+
 Features used in the required current-state linear regression
 
 1. log_loan_size: Loan balance measures exposure size. I used log1p because a small number of loans are much larger than the rest.
@@ -43,6 +45,8 @@ The target is not shaped like a standard continuous outcome. Most observations a
 Recommended alternative
 
 I also tested a two-stage hurdle model. The first stage estimates whether a loan will have positive severity. The second estimates the size of the loss for loans with positive severity. Their product is the expected severity. Gradient-boosted trees allow nonlinear effects and interactions, and the Poisson loss used in the second stage keeps the magnitude positive. On the same holdout, the hurdle model reached R² = 0.585174, MSE = 0.016136, and MAE = 0.048309 with no negative predictions. The first stage had ROC-AUC of 0.9357, average precision of 0.8073, and a Brier score of 0.0548.
+
+The repeated grouped results support the same choice. Mean MSE was 0.022719 for linear regression and 0.019861 for the hurdle model, a 12.58% reduction. Mean MAE fell from 0.066234 to 0.048328, a 27.03% reduction. The hurdle model had lower MSE and MAE in all 15 paired folds. Its fold-level MSE improvement ranged from 7.00% to 17.52%. The average gain is moderate, but it is consistent across property splits.
 
 Baseline and sensitivity context
 

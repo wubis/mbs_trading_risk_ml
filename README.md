@@ -111,6 +111,11 @@ validation. The model instead uses a fixed 80/20 `GroupShuffleSplit` on `propnam
 - Property overlap: 0
 - Positive severity: 16.16% in training and 15.72% in validation
 
+The fixed holdout is used for the required plot and headline metrics. Model stability
+is checked with three shuffled repetitions of five-fold `GroupKFold`. This gives 15
+paired validation folds. Each property appears in one validation fold per repetition,
+and preprocessing is refitted inside every fold.
+
 A time-based test would be preferable for a future-cohort forecast. The data does not
 include the date when severity was observed, so origination date alone cannot define
 a clean chronological validation set.
@@ -152,6 +157,17 @@ ROC-AUC of 0.9357, average precision of 0.8073, and Brier score of 0.0548. Condi
 loss size remains the harder part of the problem, with MAE of 0.1921 among positive
 validation cases.
 
+Repeated grouped cross-validation produced the following fold averages:
+
+| Model | Mean R² | Mean MSE | MSE standard deviation | Mean MAE |
+| --- | ---: | ---: | ---: | ---: |
+| Current-state linear regression | 0.487 | 0.022719 | 0.009485 | 0.066234 |
+| Current-state hurdle model | 0.555 | 0.019861 | 0.009363 | 0.048328 |
+
+The hurdle model had lower MSE and MAE in all 15 paired folds. It reduced mean MSE by
+12.58% and mean MAE by 27.03%. Fold-level MSE improvement ranged from 7.00% to 17.52%.
+The gain is moderate, but it is not driven by one favorable split.
+
 The hurdle model has the lowest holdout MSE and is used to score `predictions.csv`.
 The final file contains all 1,000 loans in source order with no missing or infinite
 predictions. Scored severity ranges from 0.0001 to 0.7855.
@@ -163,9 +179,9 @@ required linear regression and produces nonnegative estimates. The result does n
 support a production claim yet. The largest open issue is whether current operating
 and delinquency fields are valid at the intended prediction date.
 
-The project stops at the hurdle model instead of running a large hyperparameter search. 
-The next useful work would be repeated grouped cross-validation, probability calibration, 
-error review by subgroup, and a business decision on severity values above 1.
+The project stops at the hurdle model instead of running a large hyperparameter
+search. The next useful work would be probability calibration, error review by
+subgroup, and a business decision on severity values above 1.
 
 ## Repository files
 
@@ -177,7 +193,7 @@ error review by subgroup, and a business decision on severity values above 1.
 | `part2.txt` | Short written response for Part 2 |
 | `WORKFLOW_DESIGN.md` | Original implementation plan and data-risk review |
 | `outputs/figures/` | Part 1 chart and Part 2 diagnostic plots |
-| `outputs/metrics/` | Feature audit, model metrics, and subgroup checks |
+| `outputs/metrics/` | Feature audit, holdout metrics, grouped CV, and subgroup checks |
 | `outputs/predictions_scored.csv` | Final scored copy of `predictions.csv` |
 
 ## Reproducing the work
@@ -193,11 +209,13 @@ python part2.py
 
 `part2.py` recreates the Part 2 figures, metric tables, and scored predictions. Use
 `python part2.py --help` to supply different input or output paths. The default random
-seed is `20260901`.
+seed is `20260901`. The default cross-validation design uses five folds and three
+repetitions. It can be changed with `--cv-folds` and `--cv-repeats`.
 
 ## Known limitations
 
-- The main evaluation uses one grouped holdout rather than repeated cross-validation.
+- Repeated folds reuse observations across repetitions, so the fold spread is a
+  stability check rather than 15 independent tests.
 - There is no outcome observation date for a chronological test.
 - Current-state variables may be leakage under an origination-time use case.
 - Severity values above 1 need a business definition or correction policy.

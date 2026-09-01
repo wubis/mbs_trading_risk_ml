@@ -34,13 +34,15 @@ from sklearn.metrics import (
     r2_score,
     roc_auc_score,
 )
-from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import GroupKFold, GroupShuffleSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 
 RANDOM_SEED = 20260901
 VALIDATION_SIZE = 0.20
+CV_FOLDS = 5
+CV_REPEATS = 3
 
 EXPECTED_LOAN_COLUMNS = [
     "loan_id",
@@ -188,6 +190,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", type=Path, default=root / "outputs")
     parser.add_argument("--seed", type=int, default=RANDOM_SEED)
+    parser.add_argument("--cv-folds", type=int, default=CV_FOLDS)
+    parser.add_argument("--cv-repeats", type=int, default=CV_REPEATS)
     return parser.parse_args()
 
 
@@ -773,23 +777,31 @@ def plot_modeling_eda(development: pd.DataFrame, output_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_linear_scatter(
+def plot_actual_vs_predicted(
     y_true: pd.Series,
     predictions: np.ndarray,
-    metrics: dict[str, float | str],
+    metrics: pd.Series | dict[str, float | str],
     output_path: Path,
+    *,
+    model_label: str,
+    title: str,
+    color: str,
+    axis_limits: tuple[float, float],
 ) -> None:
-    """Create the required true-versus-linear-predicted scatter plot.
+    """Create a true-versus-predicted severity scatter plot.
 
     Args:
         y_true: Observed validation severities.
-        predictions: Linear-regression predictions aligned with ``y_true``.
-        metrics: Metric record for the current-state linear model.
+        predictions: Model predictions aligned with ``y_true``.
+        metrics: Holdout metric record for the plotted model.
         output_path: Destination PNG path.
+        model_label: Short model name used on the vertical axis.
+        title: Direct statement used as the figure title.
+        color: Matplotlib-compatible point color.
+        axis_limits: Shared lower and upper bounds for both axes.
     """
     y_array = y_true.to_numpy(dtype=float)
-    lower = min(-0.05, float(predictions.min()))
-    upper = max(1.05, float(y_array.max()), float(predictions.max()))
+    lower, upper = axis_limits
 
     fig, ax = plt.subplots(figsize=(8.4, 7.0))
     ax.scatter(
@@ -797,7 +809,7 @@ def plot_linear_scatter(
         predictions,
         s=14,
         alpha=0.22,
-        color="#2563EB",
+        color=color,
         edgecolors="none",
         rasterized=True,
     )
@@ -813,9 +825,9 @@ def plot_linear_scatter(
     ax.set_xlim(lower, upper)
     ax.set_ylim(lower, upper)
     ax.set_xlabel("True severity")
-    ax.set_ylabel("Linear-regression predicted severity")
+    ax.set_ylabel(f"{model_label} predicted severity")
     ax.set_title(
-        "Linear regression misses the zero mass and produces negative severities",
+        title,
         loc="left",
         fontsize=15,
         fontweight="bold",
@@ -986,6 +998,21 @@ class ModelResults:
     metrics: pd.DataFrame
     subgroup_metrics: pd.DataFrame
     hurdle_metrics: dict[str, float]
+
+
+@dataclass(frozen=True)
+class CrossValidationResults:
+    """Repeated property-grouped cross-validation results.
+
+    Attributes:
+        fold_metrics: Long-form metrics with one row per model and validation fold.
+        summary: Mean and standard deviation of the fold-level model metrics.
+        comparison: Paired hurdle-versus-linear results across identical folds.
+    """
+
+    fold_metrics: pd.DataFrame
+    summary: pd.DataFrame
+    comparison: pd.DataFrame
 
 
 def print_metric_table(metrics_frame: pd.DataFrame) -> None:
@@ -1287,6 +1314,177 @@ def evaluate_models(holdout: Holdout, seed: int) -> ModelResults:
     )
 
 
+def evaluate_repeated_group_cv(
+    features: pd.DataFrame,
+    target: pd.Series,
+    development: pd.DataFrame,
+    *,
+    n_splits: int,
+    n_repeats: int,
+    seed: int,
+) -> CrossValidationResults:
+    """Compare the current-state models across repeated grouped folds.
+
+    Each repetition shuffles properties before assigning them to folds. Every
+    property appears in one validation fold per repetition, and no property crosses
+    the training and validation boundary within a fold. The two models are evaluated
+    on identical folds so their errors can be compared as paired observations.
+
+    Args:
+        features: Engineered current-state features for all development rows.
+        target: Raw supplied severity aligned with ``features``.
+        development: Merged development rows with property IDs and loan balances.
+        n_splits: Number of property-grouped folds in each repetition.
+        n_repeats: Number of shuffled fold assignments.
+        seed: Base random seed. The repetition number is added to this value.
+
+    Returns:
+        Fold-level metrics, per-model summaries, and a paired comparison table.
+
+    Raises:
+        ValueError: If the requested design is invalid, a fold has property overlap,
+        or a training fold lacks zero or positive target observations.
+    """
+    require(n_splits >= 2, "Repeated group CV requires at least two folds")
+    require(n_repeats >= 1, "Repeated group CV requires at least one repetition")
+    groups = development["propname"]
+    require(
+        groups.nunique() >= n_splits,
+        "The number of property groups must be at least the number of CV folds",
+    )
+
+    fold_rows: list[dict[str, float | int | str]] = []
+    for repeat in range(1, n_repeats + 1):
+        splitter = GroupKFold(
+            n_splits=n_splits,
+            shuffle=True,
+            random_state=seed + repeat - 1,
+        )
+        for fold, (train_index, validation_index) in enumerate(
+            splitter.split(features, target, groups=groups), start=1
+        ):
+            train_groups = set(groups.iloc[train_index])
+            validation_groups = set(groups.iloc[validation_index])
+            group_overlap = len(train_groups & validation_groups)
+            require(group_overlap == 0, "A property crosses a CV fold boundary")
+
+            x_train = features.iloc[train_index]
+            x_validation = features.iloc[validation_index]
+            y_train = target.iloc[train_index]
+            y_validation = target.iloc[validation_index]
+            weights = development.iloc[validation_index]["loan_size_mm"]
+            require(y_train.gt(0).any(), "A CV training fold has no positive losses")
+            require(y_train.eq(0).any(), "A CV training fold has no zero losses")
+
+            # Preprocessing and estimation are refit from scratch in every fold.
+            # This prevents imputation, scaling, or category information from the
+            # validation properties from entering either model.
+            linear_model = build_linear_pipeline(CURRENT_STATE_NUMERIC_FEATURES)
+            linear_model.fit(x_train, y_train)
+            linear_predictions = linear_model.predict(x_validation)
+
+            hurdle_model = HurdleSeverityModel(seed + repeat - 1)
+            hurdle_model.fit(x_train, y_train)
+            hurdle_predictions = hurdle_model.predict(x_validation)
+
+            predictions_by_model = {
+                "linear_current_state": linear_predictions,
+                "hurdle_current_state": hurdle_predictions,
+            }
+            for model_name, predictions in predictions_by_model.items():
+                metrics = calculate_metrics(
+                    model_name,
+                    y_validation,
+                    predictions,
+                    weights,
+                )
+                fold_rows.append(
+                    {
+                        "repeat": repeat,
+                        "fold": fold,
+                        "train_loans": len(train_index),
+                        "validation_loans": len(validation_index),
+                        "train_properties": len(train_groups),
+                        "validation_properties": len(validation_groups),
+                        "train_positive_share": float(y_train.gt(0).mean()),
+                        "validation_positive_share": float(
+                            y_validation.gt(0).mean()
+                        ),
+                        "property_overlap": group_overlap,
+                        **metrics,
+                    }
+                )
+
+    fold_metrics = pd.DataFrame(fold_rows)
+    summary = (
+        fold_metrics.groupby("model", as_index=False)
+        .agg(
+            validation_folds=("mse", "size"),
+            r2_mean=("r2", "mean"),
+            r2_std=("r2", "std"),
+            mse_mean=("mse", "mean"),
+            mse_std=("mse", "std"),
+            rmse_mean=("rmse", "mean"),
+            rmse_std=("rmse", "std"),
+            mae_mean=("mae", "mean"),
+            mae_std=("mae", "std"),
+            negative_prediction_share_mean=(
+                "pct_predictions_below_zero",
+                "mean",
+            ),
+        )
+        .sort_values("mse_mean")
+        .reset_index(drop=True)
+    )
+
+    # Paired fold comparisons are more informative than comparing two unrelated
+    # averages because both models face the same properties and target mix.
+    paired_mse = fold_metrics.pivot(
+        index=["repeat", "fold"], columns="model", values="mse"
+    )
+    paired_mae = fold_metrics.pivot(
+        index=["repeat", "fold"], columns="model", values="mae"
+    )
+    linear_mse = paired_mse["linear_current_state"]
+    hurdle_mse = paired_mse["hurdle_current_state"]
+    linear_mae = paired_mae["linear_current_state"]
+    hurdle_mae = paired_mae["hurdle_current_state"]
+    fold_mse_reduction = (linear_mse - hurdle_mse) / linear_mse
+    fold_mae_reduction = (linear_mae - hurdle_mae) / linear_mae
+    comparison = pd.DataFrame(
+        [
+            {
+                "repeats": n_repeats,
+                "folds_per_repeat": n_splits,
+                "paired_folds": len(paired_mse),
+                "hurdle_mse_wins": int(hurdle_mse.lt(linear_mse).sum()),
+                "hurdle_mae_wins": int(hurdle_mae.lt(linear_mae).sum()),
+                "linear_mse_mean": float(linear_mse.mean()),
+                "hurdle_mse_mean": float(hurdle_mse.mean()),
+                "mse_reduction_from_mean_errors": float(
+                    1 - hurdle_mse.mean() / linear_mse.mean()
+                ),
+                "fold_mse_reduction_mean": float(fold_mse_reduction.mean()),
+                "fold_mse_reduction_std": float(fold_mse_reduction.std(ddof=1)),
+                "fold_mse_reduction_min": float(fold_mse_reduction.min()),
+                "fold_mse_reduction_max": float(fold_mse_reduction.max()),
+                "linear_mae_mean": float(linear_mae.mean()),
+                "hurdle_mae_mean": float(hurdle_mae.mean()),
+                "mae_reduction_from_mean_errors": float(
+                    1 - hurdle_mae.mean() / linear_mae.mean()
+                ),
+                "fold_mae_reduction_mean": float(fold_mae_reduction.mean()),
+                "fold_mae_reduction_std": float(fold_mae_reduction.std(ddof=1)),
+            }
+        ]
+    )
+    return CrossValidationResults(
+        fold_metrics=fold_metrics,
+        summary=summary,
+        comparison=comparison,
+    )
+
+
 def report_linear_results(results: ModelResults) -> None:
     """Print the assignment-required linear-regression outputs.
 
@@ -1343,6 +1541,45 @@ def report_model_comparison(results: ModelResults) -> str:
     return selected_model
 
 
+def report_cross_validation(results: CrossValidationResults) -> None:
+    """Print repeated group-based cross-validation results.
+
+    Args:
+        results: Fold-level, summary, and paired cross-validation results.
+    """
+    print_section("5. REPEATED PROPERTY-GROUPED CROSS-VALIDATION")
+    printable = results.summary.copy()
+    numeric = printable.select_dtypes(include="number").columns
+    printable[numeric] = printable[numeric].round(6)
+    print(printable.to_string(index=False))
+
+    comparison = results.comparison.iloc[0]
+    print(
+        "\nPaired fold comparison: hurdle MSE was lower in "
+        f"{int(comparison['hurdle_mse_wins'])} of "
+        f"{int(comparison['paired_folds'])} folds."
+    )
+    print(
+        "Mean MSE: "
+        f"linear={comparison['linear_mse_mean']:.6f}, "
+        f"hurdle={comparison['hurdle_mse_mean']:.6f}; "
+        "reduction="
+        f"{comparison['mse_reduction_from_mean_errors']:.2%}."
+    )
+    print(
+        "Mean MAE: "
+        f"linear={comparison['linear_mae_mean']:.6f}, "
+        f"hurdle={comparison['hurdle_mae_mean']:.6f}; "
+        "reduction="
+        f"{comparison['mae_reduction_from_mean_errors']:.2%}."
+    )
+    print(
+        "Fold-level MSE reduction range: "
+        f"{comparison['fold_mse_reduction_min']:.2%} to "
+        f"{comparison['fold_mse_reduction_max']:.2%}."
+    )
+
+
 def save_evaluation_outputs(results: ModelResults, metric_dir: Path) -> None:
     """Persist metrics used by the written response and QA checks.
 
@@ -1356,6 +1593,26 @@ def save_evaluation_outputs(results: ModelResults, metric_dir: Path) -> None:
     )
     pd.DataFrame([results.hurdle_metrics]).to_csv(
         metric_dir / "part2_hurdle_component_metrics.csv", index=False
+    )
+
+
+def save_cross_validation_outputs(
+    results: CrossValidationResults, metric_dir: Path
+) -> None:
+    """Persist repeated group-based cross-validation tables.
+
+    Args:
+        results: Fold-level, summary, and paired cross-validation results.
+        metric_dir: Directory where metric CSVs are written.
+    """
+    results.fold_metrics.to_csv(
+        metric_dir / "part2_repeated_group_cv_folds.csv", index=False
+    )
+    results.summary.to_csv(
+        metric_dir / "part2_repeated_group_cv_summary.csv", index=False
+    )
+    results.comparison.to_csv(
+        metric_dir / "part2_repeated_group_cv_comparison.csv", index=False
     )
 
 
@@ -1387,7 +1644,7 @@ def score_predictions(
         ValueError: If the output count, finiteness, model name, or row identity is
         inconsistent with the source scoring data.
     """
-    print_section("5. REFIT AND SCORE predictions.csv")
+    print_section("6. REFIT AND SCORE predictions.csv")
 
     linear_model = build_linear_pipeline(CURRENT_STATE_NUMERIC_FEATURES)
     linear_model.fit(features, target)
@@ -1489,16 +1746,60 @@ def main() -> None:
     report_holdout(holdout)
     results = evaluate_models(holdout, args.seed)
     report_linear_results(results)
-    linear_metrics = results.metrics.set_index("model").loc["linear_current_state"]
-    plot_linear_scatter(
+    metrics_by_model = results.metrics.set_index("model")
+    linear_metrics = metrics_by_model.loc["linear_current_state"]
+    hurdle_metrics = metrics_by_model.loc["hurdle_current_state"]
+    # Shared axes make the linear and hurdle plots directly comparable. The raw
+    # target maximum is retained because the primary evaluation does not cap labels.
+    comparison_limits = (
+        min(
+            -0.05,
+            float(results.linear_predictions.min()),
+            float(results.hurdle_predictions.min()),
+        ),
+        max(
+            1.05,
+            float(holdout.y_validation.max()),
+            float(results.linear_predictions.max()),
+            float(results.hurdle_predictions.max()),
+        ),
+    )
+    plot_actual_vs_predicted(
         holdout.y_validation,
         results.linear_predictions,
         linear_metrics,
         figure_dir / "part2_linear_actual_vs_predicted.png",
+        model_label="Linear regression",
+        title=(
+            "Linear regression misses the zero mass and produces negative "
+            "severities"
+        ),
+        color="#2563EB",
+        axis_limits=comparison_limits,
+    )
+    plot_actual_vs_predicted(
+        holdout.y_validation,
+        results.hurdle_predictions,
+        hurdle_metrics,
+        figure_dir / "part2_hurdle_actual_vs_predicted.png",
+        model_label="Hurdle model",
+        title="Hurdle model improves fit and keeps predictions nonnegative",
+        color="#0F766E",
+        axis_limits=comparison_limits,
     )
 
     save_evaluation_outputs(results, metric_dir)
     selected_model = report_model_comparison(results)
+    cross_validation = evaluate_repeated_group_cv(
+        features,
+        target,
+        development,
+        n_splits=args.cv_folds,
+        n_repeats=args.cv_repeats,
+        seed=args.seed,
+    )
+    report_cross_validation(cross_validation)
+    save_cross_validation_outputs(cross_validation, metric_dir)
     score_predictions(
         features,
         target,
