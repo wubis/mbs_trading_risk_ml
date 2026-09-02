@@ -190,7 +190,8 @@ subgroup, and confirmation of the clipping policy with the data owner.
 | --- | --- |
 | `part1.ipynb` | Part 1 checks, calculations, sensitivity analysis, and chart |
 | `part1.txt` | Short written response for Part 1 |
-| `part2.py` | Part 2 validation, preprocessing, evaluation, plots, and scoring |
+| `part2.ipynb` | Executed Part 2 analysis, validation, plots, metrics, and scoring |
+| `part2.py` | Reference script containing the same Part 2 modeling logic |
 | `part2.txt` | Short written response for Part 2 |
 | `WORKFLOW_DESIGN.md` | Implemented workflow, decisions, results, and limitations |
 | `outputs/figures/` | Part 1 chart and Part 2 model-comparison plots |
@@ -200,18 +201,13 @@ subgroup, and confirmation of the clipping policy with the data owner.
 ## Reproducing the work
 
 The analysis was run with Python 3.12.7, pandas 2.2.3, NumPy 2.1.3,
-scikit-learn 1.6.1, and Matplotlib 3.10.0. Jupyter is also needed to run Part 1.
+scikit-learn 1.6.1, and Matplotlib 3.10.0. Jupyter is needed to run both notebooks.
 
-From the repository root, run all cells in `part1.ipynb`, then run:
-
-```bash
-python part2.py
-```
-
-`part2.py` recreates the Part 2 figures, metric tables, and scored predictions. Use
-`python part2.py --help` to supply different input or output paths. The default random
-seed is `20260901`, and the fixed stability check uses three repetitions of five-fold
-property-grouped cross-validation.
+From the repository root, restart each kernel and run all cells in `part1.ipynb` and
+`part2.ipynb`. The Part 2 notebook recreates the figures, metric tables, and scored
+predictions. The retained `part2.py` reference implementation can also be run from the
+command line and accepts alternate paths through `python part2.py --help`. Both versions
+use seed `20260901` and three repetitions of five-fold property-grouped cross-validation.
 
 ## Known limitations
 

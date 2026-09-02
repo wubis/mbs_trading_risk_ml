@@ -2,7 +2,7 @@ PART 2: MODELING LOSS
 
 Modeling setup
 
-I treated the task as current-state severity estimation because predictions.csv includes updated occupancy, updated NOI, and delinquency flags. Those fields would be leakage for an origination-time forecast, so part2.py also fits an origination-only sensitivity model. Because the assignment defines severity on the interval from zero to one, the primary target clips the 108 supplied values above one; the raw supplied target is retained as a separately labeled linear-model sensitivity.
+I treated the task as current-state severity estimation because predictions.csv includes updated occupancy, updated NOI, and delinquency flags. Those fields would be leakage for an origination-time forecast, so part2.ipynb also fits an origination-only sensitivity model. Because the assignment defines severity on the interval from zero to one, the primary target clips the 108 supplied values above one; the raw supplied target is retained as a separately labeled linear-model sensitivity.
 
 I excluded loan_id and propname, joined property attributes with a validated many-to-one merge, and used an 80/20 GroupShuffleSplit on propname to prevent loans from the same property crossing the train-validation boundary. The split contains 31,790 training loans and 7,909 validation loans, with positive-severity rates of 16.16% and 15.72%, respectively.
 
@@ -46,4 +46,4 @@ Caveats and scoring
 
 The current-state fields provide most of the signal: the origination-only linear model reached R-squared of 0.069687 and MSE of 0.035026. Current occupancy, NOI, and delinquency should therefore be used only when available at the intended prediction date. A raw-target linear sensitivity reached R-squared of 0.517905 and MSE of 0.018753, so enforcing the stated target range does not change the qualitative conclusion.
 
-Because the bounded hurdle model has the lowest mean grouped-CV MSE, part2.py refits it on all labeled loans and writes 1,000 nonmissing predictions between 0.0001 and 0.7939 to outputs/predictions_scored.csv without modifying predictions.csv.
+Because the bounded hurdle model has the lowest mean grouped-CV MSE, part2.ipynb refits it on all labeled loans and writes 1,000 nonmissing predictions between 0.0001 and 0.7939 to outputs/predictions_scored.csv without modifying predictions.csv.

@@ -14,7 +14,7 @@ The analysis is complete around the four files required by the assessment:
 | --- | --- |
 | `part1.ipynb` | Merge validation, office classification, severity summaries, sensitivity checks, and the Part 1 figure |
 | `part1.txt` | Concise interpretation of the office-distress comparison |
-| `part2.py` | Data validation, feature engineering, grouped evaluation, required OLS baseline, hurdle-model experiment, plots, and scoring |
+| `part2.ipynb` | Executed data validation, feature engineering, grouped evaluation, required OLS baseline, hurdle-model experiment, plots, and scoring |
 | `part2.txt` | Feature rationales, required metrics, OLS diagnosis, and alternative-model recommendation |
 
 Supporting repository artifacts include `README.md`, generated figures and metric tables under `outputs/`, and `outputs/predictions_scored.csv`. The supplied CSV files are treated as read-only inputs.
@@ -147,7 +147,7 @@ The hurdle model has lower MSE and MAE in all 15 folds. Mean MSE falls by 15.93%
 
 ## 7. Generated outputs
 
-Running `part1.ipynb` and `part2.py` creates or refreshes:
+Running `part1.ipynb` and `part2.ipynb` creates or refreshes:
 
 ```text
 outputs/
@@ -166,12 +166,12 @@ The model with the lowest mean grouped-CV MSE is refitted on all labeled rows be
 
 ## 8. Reproduction and verification
 
-The recorded environment is Python 3.12.7 with pandas 2.2.3, NumPy 2.1.3, scikit-learn 1.6.1, and Matplotlib 3.10.0. Jupyter is required for Part 1.
+The recorded environment is Python 3.12.7 with pandas 2.2.3, NumPy 2.1.3, scikit-learn 1.6.1, and Matplotlib 3.10.0. Jupyter is required for both parts.
 
 From the repository root:
 
 1. Restart the notebook kernel and run all cells in `part1.ipynb`.
-2. Run `python part2.py`.
+2. Restart the kernel and run all cells in `part2.ipynb`.
 3. Confirm the written metrics match the generated figures and CSV tables.
 4. Confirm Git shows no changes to the three supplied input CSVs.
 
