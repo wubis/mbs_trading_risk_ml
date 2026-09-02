@@ -2,20 +2,20 @@ PART 1: ARE OFFICES IN DISTRESS?
 
 Method
 
-I joined the 39,699 loan records to the property data on propname. The property table has one row per propname, so I validated the join as many-to-one. Every loan matched and the row count stayed the same. I treated CSSA property type OF as single-purpose office. For mixed-use properties, I looked for the word "office" in the detailed property type. Four mixed-use loans had no detailed type, so I excluded them from the three-group comparison and reported them separately as unknown.
+I joined the 39,699 loan records to the property data on propname. The property table has one row per propname, so I validated the join as many-to-one. Every loan matched and the row count stayed the same. I treated CSSA property type OF as single-purpose office. I classified any other property whose detailed type contains the word "office" as mixed-use with office, including records whose broad CSSA code is not MU. Four mixed-use loans had no detailed type, so I excluded them from the three-group comparison and reported them separately as unknown.
 
 Results
 
-Figure 1 in part1.ipynb shows the requested unweighted loan averages. Office loans have average severity of 10.64% across 6,916 loans, with a property-cluster bootstrap 95% confidence interval of 10.08% to 11.20%. Mixed-use properties with offices average 7.95% across 922 loans, with an interval of 6.66% to 9.31%. Non-office properties average 6.06% across 31,857 loans, with an interval of 5.84% to 6.29%. The notebook calculates all figures directly from the supplied CSV files.
+Figure 1 in part1.ipynb shows the requested unweighted loan averages after clipping severity to the assignment's stated range of zero to one. Office loans have average severity of 10.59% across 6,916 loans, with a property-cluster bootstrap 95% confidence interval of 10.03% to 11.14%. Mixed-use properties with offices average 7.93% across 1,088 loans, with an interval of 6.73% to 9.25%. Non-office properties average 5.99% across 31,691 loans, with an interval of 5.79% to 6.18%. The notebook calculates all figures directly from the supplied CSV files.
 
 Conclusion
 
-Yes. On the unweighted loan basis requested, office properties look more distressed. Positive severity occurs for 23.71% of office loans, compared with 18.33% of mixed-use-with-office loans and 14.35% of non-office loans. Among loans that have a positive severity, the averages are much closer at 44.88%, 43.38%, and 42.27%. Most of the difference in the overall averages comes from office loans having losses more often, not from much larger losses once a loss occurs.
+Yes. On the unweighted loan basis requested, office properties look more distressed. Positive severity occurs for 23.71% of office loans, compared with 18.47% of mixed-use-with-office loans and 14.32% of non-office loans. Among loans that have a positive severity, the bounded averages are much closer at 44.67%, 42.92%, and 41.80%. Most of the difference in the overall averages comes from office loans having losses more often, not from much larger losses once a loss occurs.
 
 What might explain the finding?
 
-Weaker demand for office space could reduce occupancy and rental income, making it harder to service the debt or recover the full balance after default. This comparison does not isolate the effect of remote work. The office loans may also differ in leverage, delinquency, geography, vintage, property quality, and size. Loan size matters in a trading context. After weighting severity by loan balance, the averages are 7.90% for office, 5.61% for mixed-use with office, and 7.07% for non-office. Office remains highest, but the difference from non-office is much smaller.
+Weaker demand for office space could reduce occupancy and rental income, making it harder to service the debt or recover the full balance after default. This comparison does not isolate the effect of remote work. The office loans may also differ in leverage, delinquency, geography, vintage, property quality, and size. Loan size matters in a trading context. After weighting bounded severity by loan balance, the averages are 7.88% for office, 5.74% for mixed-use with office, and 7.00% for non-office. Office remains highest, but the difference from non-office is much smaller.
 
 Data caveat
 
-The assignment describes severity as a value from zero to one, but 108 loan records exceed one. I kept the supplied values in the main analysis. As a check, I also capped severity at one. The resulting averages are 10.59% for office, 7.95% for mixed-use with office, and 5.99% for non-office. The conclusion is unchanged.
+The assignment describes severity as a value from zero to one, but 108 loan records exceed one and the maximum is 13.6473. I therefore clip those records to one in the primary analysis. As a sensitivity check, the raw supplied averages are 10.64% for office, 7.95% for mixed-use with office, and 6.05% for non-office. The conclusion is unchanged.

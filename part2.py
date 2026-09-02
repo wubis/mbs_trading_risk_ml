@@ -165,7 +165,7 @@ def classify_office_group(frame: pd.DataFrame) -> np.ndarray:
     has_office = detailed_type.str.contains(r"\boffice\b", regex=True, na=False)
     unknown_mixed = is_mixed & detailed_type.isna()
     return np.select(
-        [is_office, is_mixed & has_office, unknown_mixed],
+        [is_office, ~is_office & has_office, unknown_mixed],
         ["office", "mixed office", "unknown mixed"],
         default="non office",
     )
@@ -251,7 +251,7 @@ def build_linear_pipeline(numeric_features: list[str]) -> Pipeline:
 
 
 class HurdleSeverityModel:
-    """Model expected severity as loss probability times positive-loss magnitude."""
+    """Model bounded expected severity as probability times positive-loss magnitude."""
 
     def __init__(self, seed: int) -> None:
         self.preprocessor = build_preprocessor(
@@ -287,7 +287,7 @@ class HurdleSeverityModel:
     ) -> tuple[np.ndarray, np.ndarray]:
         matrix = self.preprocessor.transform(features)
         probability = self.occurrence_model.predict_proba(matrix)[:, 1]
-        magnitude = np.maximum(self.magnitude_model.predict(matrix), 0)
+        magnitude = np.clip(self.magnitude_model.predict(matrix), 0, 1)
         return probability, magnitude
 
     def predict(self, features: pd.DataFrame) -> np.ndarray:
@@ -301,7 +301,7 @@ def calculate_metrics(
     predictions: np.ndarray,
     loan_weights: pd.Series | np.ndarray,
     *,
-    target_policy: str = "raw supplied severity",
+    target_policy: str = "severity clipped to [0, 1]",
 ) -> dict[str, float | str]:
     y_array = np.asarray(y_true, dtype=float)
     pred_array = np.asarray(predictions, dtype=float)
@@ -349,6 +349,7 @@ def make_holdout(
 def evaluate_holdout(
     features: pd.DataFrame,
     target: pd.Series,
+    raw_target: pd.Series,
     development: pd.DataFrame,
     train_index: np.ndarray,
     validation_index: np.ndarray,
@@ -358,6 +359,8 @@ def evaluate_holdout(
     x_validation = features.iloc[validation_index]
     y_train = target.iloc[train_index]
     y_validation = target.iloc[validation_index]
+    raw_y_train = raw_target.iloc[train_index]
+    raw_y_validation = raw_target.iloc[validation_index]
     weights = development.iloc[validation_index]["loan_size_mm"]
     metric_rows: list[dict[str, float | str]] = []
 
@@ -396,16 +399,16 @@ def evaluate_holdout(
         )
     )
 
-    capped_linear = build_linear_pipeline(CURRENT_STATE_NUMERIC_FEATURES)
-    capped_linear.fit(x_train, y_train.clip(0, 1))
-    capped_predictions = capped_linear.predict(x_validation)
+    raw_linear = build_linear_pipeline(CURRENT_STATE_NUMERIC_FEATURES)
+    raw_linear.fit(x_train, raw_y_train)
+    raw_predictions = raw_linear.predict(x_validation)
     metric_rows.append(
         calculate_metrics(
-            "linear_current_state_capped_sensitivity",
-            y_validation.clip(0, 1),
-            capped_predictions,
+            "linear_current_state_raw_sensitivity",
+            raw_y_validation,
+            raw_predictions,
             weights,
-            target_policy="severity clipped to [0, 1]",
+            target_policy="raw supplied severity",
         )
     )
 
@@ -490,7 +493,7 @@ def repeated_group_cv(
 
     fold_metrics = pd.DataFrame(rows)
     summary = (
-        fold_metrics.groupby("model", as_index=False)
+        fold_metrics.groupby(["model", "target_policy"], as_index=False)
         .agg(
             validation_folds=("mse", "size"),
             r2_mean=("r2", "mean"),
@@ -525,6 +528,7 @@ def repeated_group_cv(
     comparison = pd.DataFrame(
         [
             {
+                "target_policy": "severity clipped to [0, 1]",
                 "repeats": CV_REPEATS,
                 "folds_per_repeat": CV_FOLDS,
                 "paired_folds": len(paired_mse),
@@ -595,7 +599,8 @@ def plot_actual_vs_predicted(
         f"R² = {metrics['r2']:.3f}\n"
         f"MSE = {metrics['mse']:.4f}\n"
         f"MAE = {metrics['mae']:.4f}\n"
-        f"Predictions < 0: {metrics['pct_predictions_below_zero']:.1%}"
+        f"Predictions < 0: {metrics['pct_predictions_below_zero']:.1%}\n"
+        f"Predictions > 1: {metrics['pct_predictions_above_one']:.1%}"
     )
     ax.text(
         0.98,
@@ -635,6 +640,10 @@ def score_predictions(
     predictions = model.predict(scoring_features)
     require(len(predictions) == len(scoring_source), "Scoring row count changed")
     require(np.isfinite(predictions).all(), "Scoring predictions are not finite")
+    require(
+        ((predictions >= 0) & (predictions <= 1)).all(),
+        "Scoring predictions fall outside [0, 1]",
+    )
     output = scoring_source.copy()
     output["severity"] = predictions
     require(output["loan_id"].equals(scoring_source["loan_id"]), "Row order changed")
@@ -698,12 +707,14 @@ def main() -> None:
     development, scoring, scoring_source = load_and_validate(
         args.loan_data, args.property_data, args.prediction_data
     )
-    target = development["severity"]
+    raw_target = development["severity"]
+    target = raw_target.clip(0, 1)
     print(
         f"Development: {len(development):,} loans across "
         f"{development['propname'].nunique():,} properties; "
         f"severity is zero for {target.eq(0).mean():.2%}, "
-        f"with {target.gt(1).sum():,} values above one."
+        f"with {raw_target.gt(1).sum():,} supplied values above one. "
+        "Primary target policy: clip severity to [0, 1]."
     )
 
     features = engineer_features(development)
@@ -723,6 +734,7 @@ def main() -> None:
     holdout = evaluate_holdout(
         features,
         target,
+        raw_target,
         development,
         train_index,
         validation_index,
@@ -758,7 +770,7 @@ def main() -> None:
         metrics_by_model.loc["hurdle_current_state"],
         figure_dir / "part2_hurdle_actual_vs_predicted.png",
         model_label="Hurdle model",
-        title="Hurdle model improves fit and keeps predictions nonnegative",
+        title="Hurdle model improves fit and keeps predictions within [0, 1]",
         color="#0F766E",
         axis_limits=limits,
     )

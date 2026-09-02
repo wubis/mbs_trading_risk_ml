@@ -49,7 +49,7 @@ Severity has two properties that drive the modeling design:
 - 33,319 of 39,699 observations (83.93%) are exactly zero.
 - 108 observations exceed the specification's stated upper bound of one; the maximum is 13.6473.
 
-The primary analyses preserve the supplied target values. Capping severity to `[0, 1]` is used only as a separately labeled sensitivity check, so data-policy assumptions do not silently alter the required baseline.
+The specification's stated `[0, 1]` range is authoritative for the primary analyses, so values above one are clipped to one. The raw supplied target is retained as a separately labeled linear-model sensitivity so the impact of that policy remains visible.
 
 Other handled issues include:
 
@@ -73,7 +73,7 @@ loans.merge(properties, on="propname", how="left", validate="many_to_one")
 Office exposure is assigned deterministically:
 
 1. `Office`: `cssaproptype == "OF"`.
-2. `Mixed-use with office`: mixed-use property whose detailed type contains the word `office`.
+2. `Mixed-use with office`: any non-dedicated property whose detailed type contains the word `office`, even when its broad CSSA code is not `MU`.
 3. `Non-office`: no identified office exposure.
 4. `Unknown mixed-use`: mixed-use property with missing detail.
 
@@ -81,16 +81,16 @@ Four unknown mixed-use loans are disclosed and excluded from the requested three
 
 | Property group | Loans | Mean severity | Positive-severity rate | Mean severity if positive |
 | --- | ---: | ---: | ---: | ---: |
-| Office | 6,916 | 10.64% | 23.71% | 44.88% |
-| Mixed-use with office | 922 | 7.95% | 18.33% | 43.38% |
-| Non-office | 31,857 | 6.06% | 14.35% | 42.27% |
+| Office | 6,916 | 10.59% | 23.71% | 44.67% |
+| Mixed-use with office | 1,088 | 7.93% | 18.47% | 42.92% |
+| Non-office | 31,691 | 5.99% | 14.32% | 41.80% |
 
 Office loans have the highest unweighted mean severity. Most of the difference comes from a higher frequency of positive severity rather than a substantially larger loss conditional on loss.
 
 Two sensitivity checks preserve the conclusion:
 
-- Loan-balance-weighted mean severity is 7.90% for office, 5.61% for mixed-office, and 7.07% for non-office loans.
-- With severity capped at one, the means are 10.59%, 7.95%, and 5.99%, respectively.
+- Loan-balance-weighted bounded mean severity is 7.88% for office, 5.74% for mixed-office, and 7.00% for non-office loans.
+- With raw supplied severity, the unweighted means are 10.64%, 7.95%, and 6.05%, respectively.
 
 The comparison is descriptive. It does not isolate remote work as a cause or control for leverage, delinquency, geography, vintage, property quality, and other confounders.
 
@@ -124,26 +124,26 @@ The hurdle model has two stages:
 1. A histogram gradient-boosted classifier estimates whether severity is positive.
 2. A histogram gradient-boosted Poisson regressor estimates severity conditional on a positive loss.
 
-Expected severity is the product of the two stage predictions.
+Expected severity is the product of the two stage predictions. The conditional magnitude is clipped to `[0, 1]`, which keeps final predictions inside the stated target range.
 
 | Model | Holdout R-squared | Holdout MSE | Holdout RMSE | Holdout MAE |
 | --- | ---: | ---: | ---: | ---: |
-| All-zero baseline | -0.120 | 0.043554 | 0.208696 | 0.068227 |
-| Training-mean baseline | 0.000 | 0.038900 | 0.197232 | 0.119015 |
-| Origination-only linear regression | 0.067 | 0.036282 | 0.190477 | 0.115098 |
-| Current-state linear regression | 0.518 | 0.018751 | 0.136936 | 0.066204 |
-| Current-state hurdle model | 0.585 | 0.016136 | 0.127029 | 0.048309 |
+| All-zero baseline | -0.122 | 0.042229 | 0.205498 | 0.067673 |
+| Training-mean baseline | 0.000 | 0.037651 | 0.194038 | 0.117969 |
+| Origination-only linear regression | 0.070 | 0.035026 | 0.187153 | 0.113832 |
+| Current-state linear regression | 0.525 | 0.017876 | 0.133700 | 0.064777 |
+| Current-state hurdle model | 0.596 | 0.015224 | 0.123384 | 0.047678 |
 
-The required linear model predicts negative severity for 31.67% of validation loans. The hurdle model produces nonnegative predictions and lowers holdout MSE by approximately 14%.
+The required linear model predicts negative severity for 31.12% of validation loans. The hurdle model produces predictions inside `[0, 1]` and lowers holdout MSE by approximately 15%.
 
 Across the 15 paired grouped folds:
 
 | Model | Mean R-squared | Mean MSE | MSE standard deviation | Mean MAE |
 | --- | ---: | ---: | ---: | ---: |
-| Current-state linear regression | 0.487 | 0.022719 | 0.009485 | 0.066234 |
-| Current-state hurdle model | 0.555 | 0.019861 | 0.009363 | 0.048328 |
+| Current-state linear regression | 0.525 | 0.017859 | 0.000629 | 0.064965 |
+| Current-state hurdle model | 0.601 | 0.015015 | 0.000691 | 0.047549 |
 
-The hurdle model has lower MSE and MAE in all 15 folds. Mean MSE falls by 12.58%, and mean MAE falls by 27.03%.
+The hurdle model has lower MSE and MAE in all 15 folds. Mean MSE falls by 15.93%, and mean MAE falls by 26.81%.
 
 ## 7. Generated outputs
 
@@ -162,7 +162,7 @@ outputs/
 └── predictions_scored.csv
 ```
 
-The model with the lowest mean grouped-CV MSE is refitted on all labeled rows before scoring. The hurdle model is selected under this rule. The final output contains 1,000 finite predictions in source order, ranging from 0.0001 to 0.7855, and does not overwrite `predictions.csv`.
+The model with the lowest mean grouped-CV MSE is refitted on all labeled rows before scoring. The hurdle model is selected under this rule. The final output contains 1,000 finite predictions in source order, ranging from 0.0001 to 0.7939, and does not overwrite `predictions.csv`.
 
 ## 8. Reproduction and verification
 
@@ -175,16 +175,16 @@ From the repository root:
 3. Confirm the written metrics match the generated figures and CSV tables.
 4. Confirm Git shows no changes to the three supplied input CSVs.
 
-The current checked-in artifacts have been reproduced from a clean execution. The retained Part 2 metrics, figures, and scoring output matched the pre-refactor artifacts exactly.
+The current checked-in artifacts have been reproduced from a clean execution after the office-classification and bounded-target updates. The written results, metric tables, figures, and scoring output reflect that same run.
 
 ## 9. Known limitations and next work
 
 - Current occupancy, NOI, and delinquency are valid only for a current-state use case; they would leak information into an origination-time forecast.
 - There is no outcome observation date for a clean chronological validation split.
-- Severity values above one require a business definition before production use.
+- The assessment clips severity above one, but those source values require a business definition before production use.
 - The hurdle model's conditional loss magnitude remains less accurate than its loss-occurrence stage.
 - Part 1 is descriptive and does not adjust for confounding variables.
 - The repository records package versions in documentation but does not include a dependency lock file or a separate automated test suite.
 - Model selection and final performance estimation would be separated more strictly in a production study, ideally with nested grouped validation or an untouched final holdout.
 
-The assessment deliverables are complete. Further work should focus on timing semantics, probability calibration, subgroup error analysis, target-policy clarification, and production validation rather than adding more model complexity.
+The assessment deliverables are complete. Further work should focus on timing semantics, probability calibration, subgroup error analysis, confirming the target policy with the data owner, and production validation rather than adding more model complexity.
