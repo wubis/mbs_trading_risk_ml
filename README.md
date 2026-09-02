@@ -26,9 +26,8 @@ inputs.
 
 ### 1. Check the data contract
 
-The first pass checks the schemas, key uniqueness, merge relationship, target, dates,
-missing values, and train-to-score category coverage. The checks identified several
-issues that affect the analysis:
+The script enforces the schemas, key uniqueness, merge relationship, target, and date
+contracts. Source review also identified several issues that affect the analysis:
 
 - `loan_id` is unique and is used only to identify output rows.
 - `propname` identifies properties and is excluded from the models.
@@ -168,9 +167,9 @@ The hurdle model had lower MSE and MAE in all 15 paired folds. It reduced mean M
 12.58% and mean MAE by 27.03%. Fold-level MSE improvement ranged from 7.00% to 17.52%.
 The gain is moderate, but it is not driven by one favorable split.
 
-The hurdle model has the lowest holdout MSE and is used to score `predictions.csv`.
-The final file contains all 1,000 loans in source order with no missing or infinite
-predictions. Scored severity ranges from 0.0001 to 0.7855.
+The hurdle model has the lowest mean MSE in grouped cross-validation and is used to
+score `predictions.csv`. The final file contains all 1,000 loans in source order with
+no missing or infinite predictions. Scored severity ranges from 0.0001 to 0.7855.
 
 ## What the results support
 
@@ -189,11 +188,11 @@ subgroup, and a business decision on severity values above 1.
 | --- | --- |
 | `part1.ipynb` | Part 1 checks, calculations, sensitivity analysis, and chart |
 | `part1.txt` | Short written response for Part 1 |
-| `part2.py` | Part 2 EDA, preprocessing, evaluation, plots, and scoring |
+| `part2.py` | Part 2 validation, preprocessing, evaluation, plots, and scoring |
 | `part2.txt` | Short written response for Part 2 |
-| `WORKFLOW_DESIGN.md` | Original implementation plan and data-risk review |
-| `outputs/figures/` | Part 1 chart and Part 2 diagnostic plots |
-| `outputs/metrics/` | Feature audit, holdout metrics, grouped CV, and subgroup checks |
+| `WORKFLOW_DESIGN.md` | Implemented workflow, decisions, results, and limitations |
+| `outputs/figures/` | Part 1 chart and Part 2 model-comparison plots |
+| `outputs/metrics/` | Holdout metrics and grouped-CV summaries |
 | `outputs/predictions_scored.csv` | Final scored copy of `predictions.csv` |
 
 ## Reproducing the work
@@ -209,8 +208,8 @@ python part2.py
 
 `part2.py` recreates the Part 2 figures, metric tables, and scored predictions. Use
 `python part2.py --help` to supply different input or output paths. The default random
-seed is `20260901`. The default cross-validation design uses five folds and three
-repetitions. It can be changed with `--cv-folds` and `--cv-repeats`.
+seed is `20260901`, and the fixed stability check uses three repetitions of five-fold
+property-grouped cross-validation.
 
 ## Known limitations
 
